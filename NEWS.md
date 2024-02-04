@@ -1,6 +1,16 @@
+# evsim 1.3.0
+
+* Improved the efficiency of `get_demand` and `get_n_connections`
+* Added function `plot_ts` to plot time-series in a `dygraphs` HTML plot
+* Added multi-core processing for Windows distribution
+* Energy GMM inside of `evmodel` also contain the `ratio` of every `charging_rate`
+* Function `expand_sessions` is now exported
+* Added functions to create summary tables from `evmodel` object
+
+
 # evsim 1.2.0
 
-* Improved functions for calculating demand and occupancy (now with parallel computing)
+* Improved functions for calculating demand and occupancy (now with multi-core processing)
 * Included more example data (`evsim::california_ev_sessions` and `evsim::california_ev_sessions_profiles`).
 * Included functions to create a model from Gaussian Mixture Models parameters.
 
