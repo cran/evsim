@@ -8,6 +8,9 @@
 #' @keywords internal
 #'
 round_to_interval <- function (dbl, interval) {
+  if (is.null(interval)) {
+    return( dbl )
+  }
   round(dbl/interval) * interval
 }
 
@@ -94,6 +97,9 @@ adapt_charging_features <- function (sessions, time_resolution = 15, power_resol
 #' @param unit character. Valid base units are `second`, `minute`, `hour`, `day`,
 #' `week`, `month`, `bimonth`, `quarter`, `season`, `halfyear` and `year`.
 #' It corresponds to `unit` parameter in `lubridate::floor_date` function.
+#' @param power_interval numeric, interval of kW between power rates.
+#' It is used to round the `Power` values into this interval resolution.
+#' It can also be `NULL` to use all the original `Power` values.
 #'
 #' @return tibble
 #' @export
@@ -106,14 +112,12 @@ adapt_charging_features <- function (sessions, time_resolution = 15, power_resol
 #' get_charging_rates_distribution(evsim::california_ev_sessions, unit = "year")
 #'
 #'
-get_charging_rates_distribution <- function(sessions, unit="year") {
+get_charging_rates_distribution <- function(sessions, unit="year", power_interval = NULL) {
   sessions_power_round <- sessions %>%
     select(all_of(c("ConnectionStartDateTime", "Power"))) %>%
     mutate(
-      power = round_to_interval(.data$Power, 3.7)
-    ) %>%
-    filter(.data$power > 0)
-  sessions_power_round$power[sessions_power_round$power >= 11] <- 11
+      power = round_to_interval(.data$Power, power_interval)
+    )
   sessions_power_round %>%
     group_by(
       datetime = floor_date(.data$ConnectionStartDateTime, unit = unit),
@@ -451,6 +455,7 @@ get_day_sessions <- function(day, ev_models, connection_log, energy_log, chargin
 #' (see this [link](https://mcanigueral.github.io/evprof/articles/evmodel.html) for more information)
 #' @param sessions_day tibble with variables `time_cycle` (names corresponding to `evmodel$models$time_cycle`) and `n_sessions` (number of daily sessions per day for each time-cycle model)
 #' @param user_profiles tibble with variables `time_cycle`, `profile`, `ratio` and optionally `power`.
+#' It can also be `NULL` to use the `evmodel` original user profiles distribution.
 #' The powers must be in kW and the ratios between 0 and 1.
 #' The user profiles with a value of `power` will be simulated with this specific charging power.
 #' If `power` is `NA` then it is simulated according to the ratios of next parameter `charging_powers`.
@@ -506,6 +511,10 @@ simulate_sessions <- function(evmodel, sessions_day, user_profiles, charging_pow
   if (sum(sessions_day[["n_sessions"]]) == 0) {
     message("No EV sessions to simulate")
     return( tibble() )
+  }
+
+  if (is.null(user_profiles)) {
+    user_profiles <- get_user_profiles_distribution(evmodel)
   }
 
   ev_models <- prepare_model(evmodel[["models"]], sessions_day, user_profiles)
