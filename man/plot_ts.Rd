@@ -4,7 +4,18 @@
 \alias{plot_ts}
 \title{Interactive plot for time-series tibbles}
 \usage{
-plot_ts(df, title = NULL, xlab = NULL, ylab = NULL, legend_width = 250, ...)
+plot_ts(
+  df,
+  title = NULL,
+  xlab = NULL,
+  ylab = NULL,
+  legend_show = "auto",
+  legend_width = 250,
+  group = NULL,
+  width = NULL,
+  height = NULL,
+  ...
+)
 }
 \arguments{
 \item{df}{data.frame or tibble, first column of name \code{datetime} being of class datetime and rest of columns being numeric}
@@ -15,7 +26,20 @@ plot_ts(df, title = NULL, xlab = NULL, ylab = NULL, legend_width = 250, ...)
 
 \item{ylab}{character, Y axis label (accepts HTML code)}
 
+\item{legend_show}{character, when to display the legend.
+Specify "always" to always show the legend.
+Specify "onmouseover" to only display it when a user mouses over the chart.
+Specify "follow" to have the legend show as overlay to the chart which follows the mouse.
+The default behavior is "auto", which results in "always" when more than one series
+is plotted and "onmouseover" when only a single series is plotted.}
+
 \item{legend_width}{integer, width (in pixels) of the div which shows the legend.}
+
+\item{group}{character, dygraphs group to associate this plot with. The x-axis zoom level of dygraphs plots within a group is automatically synchronized.}
+
+\item{width}{Width in pixels (optional, defaults to automatic sizing)}
+
+\item{height}{Height in pixels (optional, defaults to automatic sizing)}
 
 \item{...}{extra arguments to pass to \code{dygraphs::dyOptions} function.}
 }
@@ -36,8 +60,7 @@ sessions <- head(evsim::california_ev_sessions, 100)
 demand <- get_demand(
   sessions,
   by = "Session",
-  resolution = 60,
-  align_time = TRUE
+  resolution = 60
 )
 demand \%>\% plot_ts()
 

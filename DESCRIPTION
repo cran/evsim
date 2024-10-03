@@ -1,6 +1,6 @@
 Package: evsim
 Title: Electric Vehicle Charging Sessions Simulation
-Version: 1.5.0
+Version: 1.6.0
 Authors@R: 
     person(given = "Marc",
            family = "Cañigueral",
@@ -15,7 +15,7 @@ Description: Simulation of Electric Vehicles charging sessions using
 License: GPL-3
 Encoding: UTF-8
 LazyData: true
-RoxygenNote: 7.2.3
+RoxygenNote: 7.3.1
 Imports: MASS, dplyr, lubridate, purrr, rlang, tidyr, jsonlite,
         dygraphs, ggplot2
 Suggests: shiny, shinydashboard, shinyWidgets, spelling, testthat (>=
@@ -27,8 +27,8 @@ BugReports: https://github.com/mcanigueral/evsim/issues
 Language: en-US
 Config/testthat/edition: 3
 NeedsCompilation: no
-Packaged: 2024-04-11 10:26:17 UTC; mcanigueral
+Packaged: 2024-10-03 09:28:33 UTC; mcanigueral
 Author: Marc Cañigueral [aut, cre] (<https://orcid.org/0000-0001-9724-5829>)
 Maintainer: Marc Cañigueral <marc.canigueral@udg.edu>
 Repository: CRAN
-Date/Publication: 2024-04-11 11:00:02 UTC
+Date/Publication: 2024-10-03 10:00:02 UTC

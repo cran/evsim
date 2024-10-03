@@ -80,6 +80,7 @@ adapt_charging_features <- function (sessions, time_resolution = 15, power_resol
       ConnectionStartDateTime = round_date(.data$ConnectionStartDateTime, paste(time_resolution, "mins")),
       ConnectionEndDateTime = .data$ConnectionStartDateTime + convert_time_num_to_period(.data$ConnectionHours),
       Power = round_to_interval(.data$Power, interval = power_resolution),
+      ConnectionHours = round(as.numeric(.data$ConnectionEndDateTime - .data$ConnectionStartDateTime, unit="hours"), 2),
       ChargingHours = round(pmin(.data$Energy/.data$Power, .data$ConnectionHours), 2),
       Energy = round(.data$Power * .data$ChargingHours, 2),
       ChargingStartDateTime = .data$ConnectionStartDateTime,
@@ -135,13 +136,15 @@ get_charging_rates_distribution <- function(sessions, unit="year", power_interva
 
 
 # Simulate sessions -------------------------------------------------------
-
-#' Estimate sessions energy values
 #'
-#' @param n number of sessions
-#' @param mu means of univariate GMM
-#' @param sigma covariance matrix of univariate GMM
-#' @param log Logical, true if models have logarithmic transformation
+#' Estimate sessions energy values following a Gaussian distribution.
+#' The minimum considered value is 1kWh based on real data analysis.
+#'
+#' @param n integer, number of sessions
+#' @param mu numeric, mean of Gaussian distribution
+#' @param sigma numeric, standard deviation of Gaussian distribution.
+#' If unknown, a recommended value is `sd = mu/3`.
+#' @param log logical, true if models have logarithmic transformation
 #'
 #' @return numeric vector
 #' @keywords internal
@@ -149,12 +152,21 @@ get_charging_rates_distribution <- function(sessions, unit="year", power_interva
 #' @importFrom stats rnorm
 #'
 estimate_energy <- function(n, mu, sigma, log) {
-  energy <- rnorm(n, mu, sigma)
-  if (log) {
-    energy <- exp(energy)
-  } else {
-    energy <- abs(energy)
+  valid_energy <- FALSE
+  while (valid_energy != TRUE) {
+    energy_sim <- rnorm(n, mean = mu, sd = sigma)
+    if (log) {
+      energy_sim <- exp(energy_sim)
+    }
+    energy_sim <- energy_sim[energy_sim > 1]
+    if (length(energy_sim) > 0) {
+      valid_energy <- TRUE
+    }
   }
+  energy <- sample(
+    energy_sim,
+    size = n, replace = TRUE
+  )
   return( energy )
 }
 
@@ -230,23 +242,30 @@ get_estimated_energy <- function(power_vct, energy_models, energy_log) {
 
 #' Estimate sessions connection values
 #'
-#' @param n number of sessions
-#' @param mu means of bivariate GMM
-#' @param sigma covariance matrix of bivariate GMM
-#' @param log Logical, true if models have logarithmic transformation
+#' Estimate sessions connection values following a Multi-variate Guassian
+#' distribution.
+#' The minimum considered value for duration is 30 minutes.
+#'
+#' @param n integer, number of sessions
+#' @param mu numeric vector, means of bivariate GMM
+#' @param sigma numeric matrix, covariance matrix of bivariate GMM
+#' @param log logical, true if models have logarithmic transformation
 #'
 #' @return vector of numeric values
 #' @keywords internal
 #'
 #' @importFrom MASS mvrnorm
+#' @importFrom dplyr slice_sample
 #'
 estimate_connection <- function(n, mu, sigma, log) {
   ev_connections <- as.data.frame(matrix(mvrnorm(n = n, mu = mu, Sigma = sigma), ncol = 2))
   if (log) {
     ev_connections <- exp(ev_connections)
-  } else {
-    ev_connections <- abs(ev_connections)
   }
+  ev_connections <- slice_sample(
+    ev_connections[ev_connections[[1]] > 0 & ev_connections[[2]] > 0.5, ],
+    n = n, replace = TRUE
+  )
   return( ev_connections )
 }
 
@@ -474,6 +493,12 @@ get_day_sessions <- function(day, ev_models, connection_log, energy_log, chargin
 #' @importFrom lubridate round_date as_datetime with_tz
 #' @importFrom rlang .data
 #' @importFrom tidyr drop_na
+#'
+#' @details
+#' Some adaptations have been done to the output of the Gaussian models:
+#' the minimum simulated energy is considered to be 1 kWh, while the minimum
+#' connection duration is 30 minutes.
+#'
 #'
 #' @examples
 #' library(dplyr)

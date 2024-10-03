@@ -11,13 +11,22 @@
 #' @param title character, title of the plot (accepts HTML code)
 #' @param xlab character, X axis label (accepts HTML code)
 #' @param ylab character, Y axis label (accepts HTML code)
+#' @param legend_show character, when to display the legend.
+#' Specify "always" to always show the legend.
+#' Specify "onmouseover" to only display it when a user mouses over the chart.
+#' Specify "follow" to have the legend show as overlay to the chart which follows the mouse.
+#' The default behavior is "auto", which results in "always" when more than one series
+#' is plotted and "onmouseover" when only a single series is plotted.
 #' @param legend_width integer, width (in pixels) of the div which shows the legend.
+#' @param group character, dygraphs group to associate this plot with. The x-axis zoom level of dygraphs plots within a group is automatically synchronized.
+#' @param width Width in pixels (optional, defaults to automatic sizing)
+#' @param height Height in pixels (optional, defaults to automatic sizing)
 #' @param ... extra arguments to pass to `dygraphs::dyOptions` function.
 #'
 #' @return dygraph
 #' @export
 #'
-#' @importFrom dygraphs dygraph dyLegend dyOptions
+#' @importFrom dygraphs dygraph dyLegend dyOptions dyCSS
 #'
 #' @examples
 #' suppressMessages(library(lubridate))
@@ -28,16 +37,42 @@
 #' demand <- get_demand(
 #'   sessions,
 #'   by = "Session",
-#'   resolution = 60,
-#'   align_time = TRUE
+#'   resolution = 60
 #' )
 #' demand %>% plot_ts()
 #'
-plot_ts <- function(df, title = NULL, xlab = NULL, ylab = NULL, legend_width = 250,  ...) {
-  dygraph(df, main = title, xlab = xlab, ylab = ylab) %>%
-    dyLegend(show = "always", width = legend_width) %>%
-    dyOptions(retainDateWindow = TRUE, useDataTimezone = TRUE, ...)
+plot_ts <- function(df, title = NULL, xlab = NULL, ylab = NULL,
+                    legend_show = "auto", legend_width = 250,
+                    group = NULL, width = NULL, height = NULL, ...) {
+  dygraph(df, main = title, xlab = xlab, ylab = ylab, group = group, width = width, height = height) %>%
+    dyLegend(show = legend_show, width = legend_width, showZeroValues = FALSE) %>%
+    dyOptions(retainDateWindow = TRUE, useDataTimezone = TRUE, ...) %>%
+    dyCSS(system.file("www", "dystyle.css", package = "evsim"))
 }
+
+
+#' Is the sessions data set aligned in time?
+#'
+#' Checks if sessions time variables (only connection/charging start times) are
+#' aligned with a specific time resolution.
+#'
+#' @param sessions tibble, sessions data set in standard format marked by `evprof` package
+#' (see [this article](https://mcanigueral.github.io/evprof/articles/sessions-format.html))
+#' @param resolution integer, time resolution (in minutes) of the time slots
+#'
+#' @return logical
+#' @keywords internal
+#'
+is_aligned <- function(sessions, resolution) {
+  connection_start_dt <- sessions$ConnectionStartDateTime
+  if (sum(unique(lubridate::minute(connection_start_dt)) %% resolution) == 0) {
+    return( TRUE )
+  } else {
+    return( FALSE )
+  }
+}
+
+
 
 # Demand ------------------------------------------------------------------
 
@@ -58,7 +93,7 @@ plot_ts <- function(df, title = NULL, xlab = NULL, ylab = NULL, legend_width = 2
 #'
 #' @details
 #' The `Power` value is calculated for every time slot according to the original
-#' required energy. The columns `NominalPower`, `RequiredEnergy` and
+#' required energy. The columns `PowerNominal`, `EnergyRequired` and
 #' `FlexibilityHours` correspond to the values of the original session, and not
 #' to the expanded session in every time slot. The column `ID` shows the number
 #' of the time slot corresponding to the original session.
@@ -110,21 +145,28 @@ expand_session <- function(session, resolution) {
     mutate(
       Session = session$Session,
       Power = 0,
-      NominalPower = session$Power,
-      RequiredEnergy = session$Energy,
-      FlexibilityHours = session$ConnectionHours - session$ChargingHours
+      PowerNominal = session$Power,
+      EnergyRequired = session$Energy
     ) %>%
-    select(all_of(c("Session", "Timeslot", "Power", "NominalPower",
-                    "RequiredEnergy", "FlexibilityHours")))
+    select(all_of(c(
+      "Session", "Timeslot", "Power", "PowerNominal", "EnergyRequired"
+    )))
 
+  # Power
   full_power_timeslots <- trunc(session$ChargingHours*60/resolution)
   full_power_energy <- session$Power*full_power_timeslots/(60/resolution)
-
   power_vct <- round(c(
     rep(session$Power, times = full_power_timeslots),
     (session$Energy - full_power_energy)/(resolution/60)
   ), 2)[seq_len(nrow(session_expanded))]
   session_expanded$Power <- replace(power_vct, is.na(power_vct), 0)
+
+  # ConnectionHoursLeft
+  session_expanded$ConnectionHoursLeft <- seq(
+    from = session$ConnectionHours,
+    length.out = ceiling(session$ConnectionHours*60/resolution),
+    by= -resolution/60
+  )
 
   return( session_expanded )
 }
@@ -141,7 +183,6 @@ expand_session <- function(session, resolution) {
 #' @param by character, being 'Profile' or 'Session'. When `by='Profile'` each column corresponds to an EV user profile.
 #' @param resolution integer, time resolution (in minutes) of the sessions datetime variables.
 #' If `dttm_seq` is defined this parameter is ignored.
-#' @param align_time logical, whether to align time variables or sessions with the corresponding time `resolution`
 #' @param mc.cores integer, number of cores to use.
 #' Must be at least one, and parallelization requires at least two cores.
 #'
@@ -160,7 +201,7 @@ expand_session <- function(session, resolution) {
 #' `ChargingStartDateTime` must coincide with
 #' `resolution` parameter. For example, if a charging session in `sessions` starts charging
 #' at 15:32 and `resolution = 15`, the load of this session won't be computed. To solve this,
-#' the parameter `align_time = TRUE` would align charging sessions' start time according to
+#' the function automatically aligns charging sessions' start time according to
 #' `resolution`, so following the previous example the session would start at 15:30.
 #'
 #'
@@ -173,8 +214,7 @@ expand_session <- function(session, resolution) {
 #' demand <- get_demand(
 #'   sessions,
 #'   by = "Session",
-#'   resolution = 60,
-#'   align_time = TRUE
+#'   resolution = 60
 #' )
 #' demand %>% plot_ts(ylab = "EV demand (kW)")
 #'
@@ -189,12 +229,11 @@ expand_session <- function(session, resolution) {
 #'   sessions,
 #'   dttm_seq = dttm_seq,
 #'   by = "Profile",
-#'   resolution = 15,
-#'   align_time = TRUE
+#'   resolution = 15
 #' )
 #' demand %>% plot_ts(ylab = "EV demand (kW)")
 #'
-get_demand <- function(sessions, dttm_seq = NULL, by = "Profile", resolution = 15, align_time = FALSE, mc.cores = 1) {
+get_demand <- function(sessions, dttm_seq = NULL, by = "Profile", resolution = 15, mc.cores = 1) {
 
   # Multi-processing parameter check
   if (mc.cores > detectCores(logical = FALSE) | mc.cores < 1) {
@@ -236,7 +275,8 @@ get_demand <- function(sessions, dttm_seq = NULL, by = "Profile", resolution = 1
       filter(.data$Power > 0)
 
     # Align time variables to current time resolution
-    if (align_time) {
+    if (!is_aligned(sessions, resolution)) {
+      message(paste0("Warning: charging sessions are aligned to ", resolution, "-minute resolution."))
       sessions <- sessions %>%
         adapt_charging_features(time_resolution = resolution)
     }
@@ -313,7 +353,6 @@ get_demand <- function(sessions, dttm_seq = NULL, by = "Profile", resolution = 1
 #' @param by character, being 'Profile' or 'Session'. When `by='Profile'` each column corresponds to an EV user profile.
 #' @param resolution integer, time resolution (in minutes) of the sessions datetime variables.
 #' If `dttm_seq` is defined this parameter is ignored.
-#' @param align_time logical, whether to align time variables or sessions with the corresponding time `resolution`
 #' @param mc.cores integer, number of cores to use.
 #' Must be at least one, and parallelization requires at least two cores.
 #'
@@ -331,7 +370,7 @@ get_demand <- function(sessions, dttm_seq = NULL, by = "Profile", resolution = 1
 #' Note that the time resolution of variable `ConnectionStartDateTime` must coincide with
 #' `resolution` parameter. For example, if a charging session in `sessions` starts charging
 #' at 15:32 and `resolution = 15`, the load of this session won't be computed. To solve this,
-#' the parameter `align_time = TRUE` would align charging sessions' start time according to
+#' the function automatically aligns charging sessions' start time according to
 #' `resolution`, so following the previous example the session would start at 15:30.
 #'
 #' @examples
@@ -343,10 +382,10 @@ get_demand <- function(sessions, dttm_seq = NULL, by = "Profile", resolution = 1
 #' connections <- get_occupancy(
 #'   sessions,
 #'   by = "ChargingStation",
-#'   resolution = 60,
-#'   align_time = TRUE
+#'   resolution = 60
 #' )
-#' connections %>% plot_ts(ylab = "Vehicles connected")
+#' connections %>%
+#'   plot_ts(ylab = "Vehicles connected", legend_show = "onmouseover")
 #'
 #' # Get occupancy with a custom datetime sequence and resolution of 15 minutes
 #' sessions <- head(evsim::california_ev_sessions_profiles, 100)
@@ -358,12 +397,12 @@ get_demand <- function(sessions, dttm_seq = NULL, by = "Profile", resolution = 1
 #' connections <- get_occupancy(
 #'   sessions,
 #'   dttm_seq = dttm_seq,
-#'   by = "Profile",
-#'   align_time = TRUE
+#'   by = "Profile"
 #' )
-#' connections %>% plot_ts(ylab = "Vehicles connected")
+#' connections %>%
+#'   plot_ts(ylab = "Vehicles connected", legend_show = "onmouseover")
 #'
-get_occupancy <- function(sessions, dttm_seq = NULL, by = "Profile", resolution = 15, align_time = FALSE, mc.cores = 1) {
+get_occupancy <- function(sessions, dttm_seq = NULL, by = "Profile", resolution = 15, mc.cores = 1) {
 
   # Multi-processing parameter check
   if (mc.cores > detectCores(logical = FALSE) | mc.cores < 1) {
@@ -402,7 +441,8 @@ get_occupancy <- function(sessions, dttm_seq = NULL, by = "Profile", resolution 
     }
 
     # Align time variables to current time resolution
-    if (align_time) {
+    if (!is_aligned(sessions, resolution)) {
+      message(paste0("Warning: charging sessions are aligned to ", resolution, "-minute resolution."))
       sessions <- sessions %>%
         adapt_charging_features(time_resolution = resolution)
     }
