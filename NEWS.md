@@ -1,3 +1,10 @@
+# evsim 1.6.1
+
+* Bug fix in `ConnectionHours` calculation
+* Bug fix in `get_demand()` and `get_occupancy()` functions
+* Bug fix in `adapt_charging_features()` function: need to convert timezone to UTC to avoid NA in summer time shift
+
+
 # evsim 1.6.0
 
 * Parameter `align_time` has been removed from all functions in favour of internal automatic alignment thanks to introduction of funcion `is_aligned`.

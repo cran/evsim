@@ -40,7 +40,6 @@ convert_time_num_to_period <- function(time_num) {
 #' limited by `ConnectionHours`. Finally, the charging times are also calculated.
 #'
 #' @param sessions tibble, sessions data set in standard format marked by `{evprof}` package
-#' (see [this article](https://mcanigueral.github.io/evprof/articles/sessions-format.html))
 #' @param time_resolution integer, time resolution (in minutes) of the sessions' datetime variables
 #' @param power_resolution numeric, power resolution (in kW) of the sessions' power
 #'
@@ -49,7 +48,7 @@ convert_time_num_to_period <- function(time_num) {
 #'
 #' @importFrom dplyr mutate
 #' @importFrom rlang .data
-#' @importFrom lubridate round_date
+#' @importFrom lubridate round_date tz with_tz
 #'
 #' @examples
 #' suppressMessages(library(dplyr))
@@ -75,10 +74,14 @@ convert_time_num_to_period <- function(time_num) {
 #'
 #'
 adapt_charging_features <- function (sessions, time_resolution = 15, power_resolution = 0.01) {
+  sessions_tz <- tz(sessions$ConnectionStartDateTime[1])
   sessions %>%
     mutate(
       ConnectionStartDateTime = round_date(.data$ConnectionStartDateTime, paste(time_resolution, "mins")),
-      ConnectionEndDateTime = .data$ConnectionStartDateTime + convert_time_num_to_period(.data$ConnectionHours),
+      ConnectionEndDateTime = with_tz(
+        with_tz(.data$ConnectionStartDateTime, "UTC") + convert_time_num_to_period(.data$ConnectionHours),
+        tzone = sessions_tz
+      ), # Need to convert timezone to UTC to avoid NA values for time-shift hours
       Power = round_to_interval(.data$Power, interval = power_resolution),
       ConnectionHours = round(as.numeric(.data$ConnectionEndDateTime - .data$ConnectionStartDateTime, unit="hours"), 2),
       ChargingHours = round(pmin(.data$Energy/.data$Power, .data$ConnectionHours), 2),
@@ -93,8 +96,7 @@ adapt_charging_features <- function (sessions, time_resolution = 15, power_resol
 #'
 #' Get charging rates distribution in percentages from a charging sessions data set
 #'
-#' @param sessions tibble, sessions data set in standard format marked by `{evprof}` package
-#' (see [this article](https://mcanigueral.github.io/evprof/articles/sessions-format.html))t
+#' @param sessions tibble, sessions data set in standard format marked by `{evprof}` packaget
 #' @param unit character. Valid base units are `second`, `minute`, `hour`, `day`,
 #' `week`, `month`, `bimonth`, `quarter`, `season`, `halfyear` and `year`.
 #' It corresponds to `unit` parameter in `lubridate::floor_date` function.
@@ -152,21 +154,12 @@ get_charging_rates_distribution <- function(sessions, unit="year", power_interva
 #' @importFrom stats rnorm
 #'
 estimate_energy <- function(n, mu, sigma, log) {
-  valid_energy <- FALSE
-  while (valid_energy != TRUE) {
-    energy_sim <- rnorm(n, mean = mu, sd = sigma)
-    if (log) {
-      energy_sim <- exp(energy_sim)
-    }
-    energy_sim <- energy_sim[energy_sim > 1]
-    if (length(energy_sim) > 0) {
-      valid_energy <- TRUE
-    }
+  energy_sim <- rnorm(n, mean = mu, sd = sigma)
+  if (log) {
+    energy_sim <- exp(energy_sim)
   }
-  energy <- sample(
-    energy_sim,
-    size = n, replace = TRUE
-  )
+  # Minimum 1kWh
+  energy <- pmax(energy_sim, 1)
   return( energy )
 }
 
@@ -262,10 +255,8 @@ estimate_connection <- function(n, mu, sigma, log) {
   if (log) {
     ev_connections <- exp(ev_connections)
   }
-  ev_connections <- slice_sample(
-    ev_connections[ev_connections[[1]] > 0 & ev_connections[[2]] > 0.5, ],
-    n = n, replace = TRUE
-  )
+  ev_connections[[1]] <- pmax(ev_connections[[1]], 0)
+  ev_connections[[2]] <- pmax(ev_connections[[2]], 0.5)
   return( ev_connections )
 }
 
@@ -315,7 +306,7 @@ estimate_sessions <- function(profile_name, n_sessions, power, connection_models
   }
 
   ev_sessions <- tibble()
-  n_sessions_objective <- n_sessions - nrow(ev_sessions)
+  n_sessions_objective <- n_sessions
 
   while (n_sessions_objective > 0) {
 
@@ -362,7 +353,6 @@ estimate_sessions <- function(profile_name, n_sessions, power, connection_models
     # Energy ----------------------------------------------------
     estimated_energy <- get_estimated_energy(estimated_power, energy_models, energy_log)
 
-
     estimated_sessions <- tibble(
       start = round(estimated_connections[[1]], 2),
       duration = round(estimated_connections[[2]], 2),
@@ -400,8 +390,15 @@ get_day_features <- function(day, ev_models) {
     day_timecycle <- ev_models[["time_cycle"]][models_month_idx & models_wday_idx][[1]]
     day_models <- ev_models[["user_profiles"]][models_month_idx & models_wday_idx][[1]]
     day_n_sessions <- ev_models[["n_sessions"]][models_month_idx & models_wday_idx][[1]]
+
+    if (nrow(day_models) == 0) {
+      message(paste("Warning: no models configured for", day_timecycle, "time-cycle."))
+      day_models <- NA
+      day_n_sessions <- 0
+    }
+
   } else {
-    message("Warning: the day to simulate is not considered by the models.")
+    message(paste("Warning: the day", as.character(day), "is not considered by the models."))
     day_timecycle <- NA
     day_models <- NA
     day_n_sessions <- 0
@@ -471,7 +468,6 @@ get_day_sessions <- function(day, ev_models, connection_log, energy_log, chargin
 #' Simulate EV charging sessions given the `evmodel` object and other contextual parameters.
 #'
 #' @param evmodel object of class `evmodel` built with `{evprof}`
-#' (see this [link](https://mcanigueral.github.io/evprof/articles/evmodel.html) for more information)
 #' @param sessions_day tibble with variables `time_cycle` (names corresponding to `evmodel$models$time_cycle`) and `n_sessions` (number of daily sessions per day for each time-cycle model)
 #' @param user_profiles tibble with variables `time_cycle`, `profile`, `ratio` and optionally `power`.
 #' It can also be `NULL` to use the `evmodel` original user profiles distribution.
@@ -561,8 +557,7 @@ simulate_sessions <- function(evmodel, sessions_day, user_profiles, charging_pow
   simulated_sessions <- simulated_sessions %>%
     mutate(
       ConnectionStartDateTime = round_date(.data$start_dt, unit = paste(resolution, "minutes")),
-      ConnectionHours = round_to_interval(.data$duration, 1/60), # Rounded to 1-minute resolution
-      ConnectionEndDateTime = .data$ConnectionStartDateTime + convert_time_num_to_period(.data$ConnectionHours),
+      ConnectionHours = .data$duration,
       Power = .data$power,
       Energy = .data$energy
     ) %>%

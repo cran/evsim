@@ -13,8 +13,7 @@ get_demand(
 )
 }
 \arguments{
-\item{sessions}{tibble, sessions data set in standard format marked by \code{{evprof}} package
-(see \href{https://mcanigueral.github.io/evprof/articles/sessions-format.html}{this article})}
+\item{sessions}{tibble, sessions data set in standard format marked by \code{{evprof}} package}
 
 \item{dttm_seq}{sequence of datetime values that will be the \code{datetime}
 variable of the returned time-series data frame.}
@@ -52,7 +51,7 @@ demand <- get_demand(
   by = "Session",
   resolution = 60
 )
-demand \%>\% plot_ts(ylab = "EV demand (kW)")
+demand \%>\% plot_ts(ylab = "EV demand (kW)", legend_show = "onmouseover")
 
 # Get demand with a custom datetime sequence and resolution of 15 minutes
 sessions <- head(evsim::california_ev_sessions_profiles, 100)
@@ -67,6 +66,6 @@ demand <- get_demand(
   by = "Profile",
   resolution = 15
 )
-demand \%>\% plot_ts(ylab = "EV demand (kW)")
+demand \%>\% plot_ts(ylab = "EV demand (kW)", legend_show = "onmouseover")
 
 }
