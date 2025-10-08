@@ -1,3 +1,10 @@
+# evsim 1.7.0
+
+* Replaced multi-core processing from `parallel::mclapply()` by `purrr::in_parallel()` using `mirai` package
+* Removed `mc.cores` parameter from all functions since now the parallel processing must be defined by the user
+* Function `adapt_charging_features()` now filters incorrect sessions and prints a warning
+
+
 # evsim 1.6.1
 
 * Bug fix in `ConnectionHours` calculation
